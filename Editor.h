@@ -2,10 +2,11 @@
 #define EVIL_EDITOR_H
 
 #include "Definitions.h"
-#include "TextureManager.h"
+#include "ImageManager.h"
 #include "Renderer.h"
 #include "Input.h"
 #include "Camera.h"
+#include "Overlay.h"
 
 class eEditor {
 public:
@@ -20,19 +21,19 @@ public:
 	eRenderer &			GetRenderer();
 	eInput &			GetInput();
 	eCamera &			GetCamera();
+	eImageManager &		GetImageManager();
 
 private:
-
-	std::vector<SDL_Rect> outputRects;		// sub-image bounding frames within the target image
 
 	eRenderer			renderer;
 	eInput				input;
 	eCamera				camera;
-	eTextureManager		textureManager;
+	eImageManager		imageManager;
+	eOverlay			overlay;
 };
 
-extern eEditor editor;		// DEBUG: one instance used by the entire system
-extern eImage target;		// DEBUG: hard-coded image to edit
+extern eEditor editor;						// DEBUG: one instance used by the entire system
+extern std::shared_ptr<eImage> target;		// DEBUG: hard-coded image to edit
 
 //*****************
 // eEditor::eEditor
@@ -59,6 +60,13 @@ inline eCamera & eEditor::GetCamera() {
 //*****************
 inline eRenderer & eEditor::GetRenderer() {
 	return renderer;
+}
+
+//*****************
+// eEditor::GetImageManager
+//*****************
+inline eImageManager & eEditor::GetImageManager() {
+	return imageManager;
 }
 
 #endif /* EVIL_EDITOR_H */

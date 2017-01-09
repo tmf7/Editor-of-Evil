@@ -1,7 +1,9 @@
 #include "Editor.h"
+#include <tuple>
 
 eEditor editor;
-eImage target;
+std::shared_ptr<eImage> target = nullptr;
+Uint32 globalIDPool = 0;
 
 //*****************
 // eEditor::Init
@@ -17,13 +19,19 @@ bool eEditor::Init() {
 		return false;
 	}
 
-	// hard-coded target image loading
-	SDL_Texture * source = textureManager.GetTexture("graphics/Jog_0(14,60,111).png");
-	target.Init(source, "graphics/Jog_0(14,60,111).png");
+	if (!imageManager.Init() || !imageManager.BatchLoad("def/map1.imb")) {
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Image Manager failed to initialize!", NULL);
+		return false;
+	}
 
-	SliceTarget();
+	// DEBUG: hard-coded target image for testing
+	if (!imageManager.GetImage("graphics/characters/heroine/jog/Jog_0(14,60,111).png", target)) {
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Target failed to initialize!", NULL);
+		return false;
+	}
+//	SliceTarget();
 
-	camera.Init();
+	camera.Init();		// DEUBG: this must come after target initialization
 
 	input.Init();		// DEBUG: will crash if it fails around the allocation
 	return true;
@@ -33,7 +41,7 @@ bool eEditor::Init() {
 // eEditor::Shutdown
 //*****************
 void eEditor::Shutdown() {
-	textureManager.Free();
+	imageManager.Free();
 	renderer.Free();
 	SDL_Quit();
 }
@@ -62,12 +70,12 @@ bool eEditor::RunFrame() {
 	renderer.Clear();
 	// TODO: allow a linear expansion/contraction zoom without affecting the source texture
 	// or, if it does then scale how the rectangles are computed as well
-	renderer.AddToRenderQueue(renderImage_t(vec2_zero, &target, 0));
-	renderer.FlushRenderQueue();
+	renderer.AddToRenderPool(renderImage_t(vec2_zero, target, nullptr, 0));
+	renderer.FlushRenderPool();
 
 	Uint8 debugColor[] = { 0, 128, 0, 255 };	// opaque green
 	renderer.DrawDebugRect(debugColor, SDL_Rect{ 0,0,4,4 }, true);
-	renderer.DrawDebugRects(debugColor, outputRects, false);
+//	renderer.DrawDebugRects(debugColor, outputRects, false);
 
 	renderer.Show();
 
@@ -85,78 +93,86 @@ bool eEditor::RunFrame() {
 //****************
 void eEditor::SliceTarget() {
 
-	// treat the source surface as a 2D array of images
+	// get basic target image information
 	int textureWidth, textureHeight;
 	Uint32 textureFormat;
-	SDL_QueryTexture(target.Source(), &textureFormat, NULL , &textureWidth, &textureHeight);
+	SDL_QueryTexture(target->Source(), &textureFormat, NULL , &textureWidth, &textureHeight);
 
-	// check that the renderer supports changing targets (worked on my hp windows 8 laptop)
-//	SDL_RendererInfo info;
-//	SDL_GetRendererInfo(renderer.GetSDLRenderer(), &info);
-//	int success = info.flags & SDL_RENDERER_TARGETTEXTURE;
+	// only split targets that have alpha channels
+	if (!SDL_ISPIXELFORMAT_ALPHA(textureFormat))
+		return;
 
-	int texturePitch = SDL_BYTESPERPIXEL(textureFormat) * textureWidth;
-	Uint8 * texturePixels = new Uint8[texturePitch * textureHeight];	// DEBUG: assume 8 bytes per channel
-	SDL_SetRenderTarget(renderer.GetSDLRenderer(), target.Source());
+	// get a copy of the target image's pixel data
+	const int texturePitch = SDL_BYTESPERPIXEL(textureFormat) * textureWidth;
+	Uint32 * texturePixels = new Uint32[texturePitch * textureHeight];	// DEBUG: allocate space for 32bpp even if only 8bpp
+	SDL_SetRenderTarget(renderer.GetSDLRenderer(), target->Source());
 	SDL_RenderReadPixels(renderer.GetSDLRenderer(), NULL, textureFormat, texturePixels, texturePitch);
 	SDL_SetRenderTarget(renderer.GetSDLRenderer(), NULL);
 	
+	// determine relevant pixel indexing values
+	const int lastPixel = texturePitch * textureHeight;
+	int pixelRows = lastPixel / textureWidth;
+	int pixelColumns = lastPixel % textureWidth;
+	
+	// traverse the pixel data and construct SDL_Rects 
+	// around each sub-image of the target image
 
-	int initialX = 0;
-	int initialY = 0;
+	std::vector<std::tuple<int, int>> startPoints;		// DEBUG: list of pixel row, colum pairs that define new search areas
+//	startPoints.push_back(std::make_tuple<int, int>(row, column));
+//	int startRow = std::get<0>(startPoints[i]);
+//	int startCol = std::get<1>(startPoints[i]);
 
+	// TODO: first focus on finding a bottom-right corner for the rect
+	// assuming the top-left is at 0,0 (or startPoints[i])
+	// THEN focus on shifting the top-left corner 
+	SDL_PixelFormat * pixelFormat = SDL_AllocFormat(textureFormat);
+	for (int count = 0; count < lastPixel; count++) {	// DEBUG: this loop ensures every transparent pixel gets checked at least once
+		// TODO: make a maxRow and maxCol
+		// row and column will be jumping around alot during the search
+		// and incrementing differently depending on which edge of the expanding rect is being checked
+		// DO NOT search a row/column if maxRow/maxColumn hasnt changed
+		// DO NOT allow maxRow/maxColumn to go beyond pixelRows/pixelColumns
 
-	// check for an alpha channel first as
-	// that is the pixel channel to scan
-	if (SDL_ISPIXELFORMAT_ALPHA(textureFormat)) {
-		int increment = SDL_BYTESPERPIXEL(textureFormat);
-		// TODO: use these values to set the BIT jump internal
-		// and starting bit
-		// EG: index += bytesPerChannel * numChannels;
-		// or index += 8(bpc) * 4(c) == 32; so jump ahead 32 to get the next alpha chunck
-		// NOTE: some may be ARGB1555 meaning the jump is 16 bits (two 8-bit jumps to the next alpha channel)
-//		int pixelLayout = SDL_PIXELLAYOUT(textureFormat);
-//		int pixelType = SDL_PIXELTYPE(textureFormat);
-//		int pixelOrder = SDL_PIXELORDER(textureFormat);
+		int maxRow = 1;
+		int maxColumn = 1;
+		int row, column;
 
-		// TODO: run a debug loop and set the x, y of the first rect at the first non-zero pixel
-		// note texturePixels[i] returns an 8 bit integer (not a 1 bit or 5 bit)
-		// the starting i is currently assumed to be an alpha channel, but use the SDL_PIXEL* functions
-		// to actually set the starting i, AND use them to set how many BITS to be looking at (1, 5, 6, 8, etc)
-		// instead of texturePixels default 8
-		int i;
-		for (i = 0; texturePixels[i] == 0; i += increment);
+		Uint8 red, green, blue, alpha;
 
-		// figure out which pixel of the image i is looking at (in rows and columns)
-		// and given that the image is planted at 0,0: row = x, column = y
-		initialX = (i / increment) % textureWidth;
-		initialY = (i / increment) / textureWidth;
-	}
-
-	// set a focusFrame w and h, then loop and push_back
-	int frameWidth = 60;
-	int frameHeight = 111;
-	int xPadding = 30;		// DEBUG: no effect on the 0-th row
-	int yPadding = 50;		// DEBUG: no effect on the 0-th column
-
-	int targetColumns = textureWidth / frameWidth;
-	int targetRows = textureHeight / frameHeight;
-	int column = 0;
-	int row = 0;
-	while (column < targetColumns) {
-		int x = initialX + column * frameWidth + xPadding * column;
-		int y = initialY + row * frameHeight + yPadding * row;
-		int w = frameWidth;
-		int h = frameHeight;
-
-		outputRects.push_back( SDL_Rect{ x, y, w, h} );
-
-		row++;
-		if (row >= targetRows) {
-			row = 0;
-			column++;
+		// search down the right edge of the rect
+		for (row = 0, column = maxColumn; row < maxRow; row++) {
+			SDL_GetRGBA(texturePixels[row * pixelColumns + column], pixelFormat, &red, &green, &blue, &alpha);
+			// continue to increase maxRow until an alpha > 0 is found, then set a bool waitForClearRow
+			// if waitForClear == true (ie an alpha > 0 pixel was previously found moving vertically)
+			// AND row == maxRow (ie loop finishes) then DO NOT INCREASE maxRow anymore (yet)
 		}
-	}
+
+		// search across the bottom edge of the rect
+		for (row = maxRow, column = 0; column < maxColumn; column++) {
+			SDL_GetRGBA(texturePixels[row * pixelColumns + column], pixelFormat, &red, &green, &blue, &alpha);
+			// continue to increase maxColumn until an alpha > 0 is found, then set a bool waitForClearColumn
+			// if waitForClear == true (ie an alpha > 0 pixel was previously found moving horizontally)
+			// AND column == maxColumn (ie loop finishes) then DO NOT INCREASE maxColumn anymore (yet)
+		}
+
+		// if either maxRow or maxColumn has stopped moving, but row/column DON'T get to maxRow/maxColumn
+		// that means 
+		
+
+		// TODO: now check if the alpha > SDL_ALPHA_TRANSPARENT
+		// if it is, then trigger something, then potentially wait until another trigger point
+
+		// TODO: search by a row at fixed column, then a column by fixed row
+		// as in the edges of a rectangle, not the full insides
+		// but start the rectangle at x,y,w,h == 0,0,1,1
+
+		//	int x = column;
+		//	int y = row;
+		//	int w = frameWidth;
+		//	int h = frameHeight;
+		//	outputRects.push_back( SDL_Rect{ x, y, w, h} );
+	} 
 
 	delete[] texturePixels;		// delete the copy of the texture pixels made
+	SDL_FreeFormat(pixelFormat);
 }

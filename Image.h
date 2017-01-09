@@ -5,68 +5,70 @@
 
 //***************************************
 //				eImage
-// Provides access to pixel data as well (source)
-// as a subset of that pixel data (frame)
-// users must ensure frame dimensions and position
-// does not exceed that of the source dimensions
+// stores access pointer to SDL_Texture 
+// that is handled by eImageManager
 //***************************************
 class eImage {
 public:
-
 							eImage();
+							eImage(SDL_Texture * source, const char * filename, unsigned int id);
 
-	void					Init(SDL_Texture * source, const char * name);
 	bool					IsValid() const;
-	void					SetSource(SDL_Texture * source, const char * name);
 	SDL_Texture *			Source() const;
-	void					SetSubImage(const int frameNumber);	// FIXME: heavily modify this logic**********
-	SDL_Rect &				Frame();
-	const SDL_Rect &		Frame() const;
-	std::string				Name() const;
+	int						GetWidth() const;
+	int						GetHeight() const;
+	std::string				GetFilename() const;
+	unsigned int			GetID() const;
+	void					Free();
 
 private:
 
 	SDL_Texture *			source;
-	std::vector<SDL_Rect>	subFrames;			// list of all SDL_Texture sub-image frames
-	SDL_Rect *				focusFrame;			// currently used sub-image frame
-	std::string				name;
+	SDL_Point				size;
+	std::string				filename;
+	unsigned int			id;
 };
+
 
 //**************
 // eImage::eImage
 //**************
-inline eImage::eImage() 
-	: source(nullptr) {
+inline eImage::eImage()
+	: source(nullptr),
+	  filename("invalid_file"), 
+	  id(INVALID_ID) {
+	size = SDL_Point{ 0, 0 };
+}
+
+
+//**************
+// eImage::eImage
+// frame is the size of the texture
+//**************
+inline eImage::eImage(SDL_Texture * source, const char * filename, unsigned int id)
+	: source(source), 
+	  filename(filename), 
+	  id(id) {
+	SDL_QueryTexture(source, NULL, NULL, &size.x, &size.y);
 }
 
 //**************
-// eImage::Init
-// adds a default frame the size of the texture
+// eImage::IsValid
+// returns true if source != NULL
 //**************
-inline void eImage::Init(SDL_Texture * source, const char * name) {
-	this->source = source;
-	this->name = name;
-
-	int textureWidth, textureHeight;
-	SDL_QueryTexture(source, NULL, NULL, &textureWidth, &textureHeight);
-	SDL_Rect defaultFrame{ 0, 0, textureWidth, textureHeight };
-	subFrames.push_back(defaultFrame);
-	focusFrame = &subFrames[0];
+inline bool eImage::IsValid() const {
+	return source != nullptr;
 }
 
 //**************
-// eImage::SetSource
-// replaces the default frame to the size of the texture
-// and sets the focusFrame to the new default
+// eImage::Free
 //**************
-inline void eImage::SetSource(SDL_Texture * source, const char * name) {
-	this->source = source;
-
-	int textureWidth, textureHeight;
-	SDL_QueryTexture(source, NULL, NULL, &textureWidth, &textureHeight);
-	SDL_Rect newDefaultFrame{ 0, 0, textureWidth, textureHeight };
-	subFrames.at(0) = newDefaultFrame;
-	focusFrame = &subFrames[0];
+inline void eImage::Free() {
+	if (source)
+		SDL_DestroyTexture(source);
+	filename.clear();
+	id = INVALID_ID;
+	size = SDL_Point{ 0, 0 };
 }
 
 //**************
@@ -77,53 +79,99 @@ inline SDL_Texture * eImage::Source() const {
 }
 
 //**************
-// eImage::Frame
-// mutable access to frame data members x, y, width, and height
+// eImage::GetWidth
 //**************
-inline SDL_Rect & eImage::Frame() {
+inline int eImage::GetWidth() const {
+	return size.x;
+}
+
+//**************
+// eImage::GetHeight
+//**************
+inline int eImage::GetHeight() const {
+	return size.y;
+}
+
+//**************
+// eImage::GetFilename
+//**************
+inline std::string eImage::GetFilename() const {
+	return filename;
+}
+
+
+//**************
+// eImage::GetID
+//**************
+inline unsigned int eImage::GetID() const {
+	return id;
+}
+
+//***************************************
+//				eImageTiler
+// sub-sectioning of eImage data
+// for use by animations and tilesets
+// TODO: modify calls render.AddToRenderQueue(renderImage{point, image_ptr, frame_ptr, layer_byte});
+// where frame_ptr is either nullptr for an entire eImage, or &imageTiler.GetFrame()
+//***************************************
+class eImageTiler {
+public:
+
+	void					Init(std::shared_ptr<eImage> image, std::vector<SDL_Rect> && subFrameList);
+	std::shared_ptr<eImage>	Source() const;
+	SDL_Rect				GetFrame();
+	const SDL_Rect	&		GetFrame() const;
+	void					SetFrame(const int frameNumber);
+	int						GetNumFrames() const;
+
+private:
+
+	std::shared_ptr<eImage> source;	
+	std::vector<SDL_Rect>	subFrames;			// subsections of image to focus on
+	SDL_Rect *				focusFrame;			// currently used image subsection
+};
+
+//**************
+// eImageTiler::Init
+//**************
+inline void eImageTiler::Init(std::shared_ptr<eImage> image, std::vector<SDL_Rect> && subFrameList) {
+	source = image;
+	subFrames = std::move(subFrameList);
+	focusFrame = &subFrames[0];
+}
+
+//**************
+// eImageTiler::Source
+//**************
+inline std::shared_ptr<eImage> eImageTiler::Source() const {
+	return source;
+}
+
+//**************
+// eImageTiler::GetFrame
+//**************
+inline SDL_Rect eImageTiler::GetFrame() {
 	return *focusFrame;
 }
 
 //**************
-// eImage::Frame
-// read-only access to frame data members x, y, width, and height
+// eImageTiler::GetFrame
 //**************
-inline const SDL_Rect & eImage::Frame() const {
+inline const SDL_Rect & eImageTiler::GetFrame() const {
 	return *focusFrame;
 }
 
 //**************
-// eImage::SetSubImage
-// select a source-size-dependent area of source
-// user must ensure source data is not NULL via Image::IsValid()
-// DEBUG: this indirectly modifies frame data
-// FIXME/BUG: alter this logic heavily*************************
+// eImageTiler::SetFrame
 //**************
-inline void eImage::SetSubImage(const int frameNumber) {
-	int sourceColumns;
-	int textureWidth, textureHeight;
-
-	// treat the source surface as a 2D array of images
-	// FIXME/BUG: focusFrame is potentially nullptr (constructed, init, and set all leave it nullptr)
-	SDL_QueryTexture(source, NULL, NULL, &textureWidth, &textureHeight);
-	sourceColumns = textureWidth / focusFrame->w;
-	focusFrame->x = (frameNumber % sourceColumns) * focusFrame->w;	// mod give col
-	focusFrame->y = (frameNumber / sourceColumns) * focusFrame->h;	// div gives row
+inline void eImageTiler::SetFrame(const int frameNumber) {
+	focusFrame = &subFrames[frameNumber];
 }
-
 //**************
-// eImage::IsValid
-// returns true if source != NULL
+// eImageTiler::GetNumFrames
 //**************
-inline bool eImage::IsValid() const {
-	return source != NULL;
-}
-
-//**************
-// eImage::Name
-//**************
-inline std::string eImage::Name() const {
-	return name;
+inline int eImageTiler::GetNumFrames() const {
+	return subFrames.size();
 }
 
 #endif /* EVIL_IMAGE_H */

@@ -52,7 +52,8 @@ private:
 //*******************
 // eHashIndex::eHashIndex
 //*******************
-inline eHashIndex::eHashIndex() : eHashIndex(defaultHashSize) {
+inline eHashIndex::eHashIndex() 
+	: eHashIndex(defaultHashSize) {
 }
 
 //*******************

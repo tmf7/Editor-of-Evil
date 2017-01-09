@@ -10,15 +10,23 @@
 #include "Image.h"
 
 typedef struct renderImage_s {
-	eVec2			position;	// where on the screen
-	eImage *		image;		// for entities, this would be which frame of the eSprite is being drawn
-	size_t			priority;
+	eVec2 *						position;	// where on the screen
+	std::shared_ptr<eImage>		image;		// for entities, this would be which frame of the eSprite is being drawn
+	SDL_Rect *					frame;		// what part of the source image to draw
+	Uint32						priority;
 
 	renderImage_s()
-		: position(vec2_zero), image(nullptr), priority(UINT_MAX) {};
-
-	renderImage_s(const eVec2 & position, eImage * image, const int layer)
-		: position(position), image(image), priority(layer << 16) {};
+		: position(nullptr), 
+		  image(nullptr),
+		  frame(nullptr),
+		  priority(MAX_LAYER << 16) {};
+	
+	renderImage_s(eVec2 & position, std::shared_ptr<eImage> image, SDL_Rect * frame, const Uint8 layer)
+		: position(&position), 
+		  image(image), 
+		  frame(frame),
+		  priority(layer << 16) {};	// DEBUG: most-significant 2 bytes are layer
+									// least-significant 2 bytes are renderPool push order
 } renderImage_t;
 
 //**************************************************
@@ -30,7 +38,7 @@ class eRenderer {
 public:
 
 						eRenderer();
-
+						
 	bool				Init();
 	void				Free() const;
 	void				Clear() const;
@@ -40,11 +48,11 @@ public:
 	SDL_Renderer *		GetSDLRenderer() const;
 	SDL_Window *		GetWindow() const;
 
-	void				AddToRenderQueue(renderImage_t & renderImage);
-	void				FlushRenderQueue();
+	void				AddToRenderPool(renderImage_t & renderImage);
+	void				FlushRenderPool();
 
-	void				DrawOutlineText(char * string, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a) const;
-	void				DrawImage(eImage * image, const eVec2 & point) const;
+	void				DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool isStatic) const;
+	void				DrawImage(const eVec2 & point, std::shared_ptr<eImage> image, const SDL_Rect * frame) const;
 	void				DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill) const;
 	void				DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill) const;
 
@@ -57,7 +65,7 @@ public:
 private:
 
 	static const int				defaultRenderCapacity = 1024;
-	std::vector<renderImage_t>		renderQueue;
+	std::vector<renderImage_t>		renderPool;
 
 	SDL_Window *		window;
 	SDL_Renderer *		internal_renderer;
@@ -68,7 +76,7 @@ private:
 // eRenderer::eRenderer
 //***************
 inline eRenderer::eRenderer() {
-	renderQueue.reserve(defaultRenderCapacity);
+	renderPool.reserve(defaultRenderCapacity);
 }
 
 //***************
@@ -133,12 +141,12 @@ inline bool eRenderer::OnScreen(const eBounds & bounds) const {
 
 //***************
 // eRenderer::AddToRenderQueue
-// DEBUG: the second 2 bytes of priority were set using the layer during construction,
-// the the first 2 bytes are now set according to the order the renderImage was added to the renderQueue
+// DEBUG: most-significant 2 bytes of priority were set using the layer during construction,
+// the the least-significant 2 bytes are now set according to the order the renderImage was added to the renderPool
 //***************
-inline void eRenderer::AddToRenderQueue(renderImage_t & renderImage) {
-	renderImage.priority |= renderQueue.size();
-	renderQueue.push_back(renderImage);
+inline void eRenderer::AddToRenderPool(renderImage_t & renderImage) {
+	renderImage.priority |= renderPool.size();
+	renderPool.push_back(renderImage);
 }
 
 //***************
@@ -146,19 +154,19 @@ inline void eRenderer::AddToRenderQueue(renderImage_t & renderImage) {
 // FIXME/BUG(!): ensure entities never occupy the same layer/depth as world tiles 
 // (otherwise the unstable quicksort will put them at RANDOM draw orders relative to the same layer/depth tiles)
 //***************
-inline void eRenderer::FlushRenderQueue() {
-	QuickSort(renderQueue.data(), 
-			  renderQueue.size(), 
+inline void eRenderer::FlushRenderPool() {
+	QuickSort(renderPool.data(), 
+			  renderPool.size(), 
 			  [](auto && a, auto && b) { 
 					if (a.priority < b.priority) return -1; 
 					else if (a.priority > b.priority) return 1;
 					return 0; 
 				}
 	);
-	for (auto && iter : renderQueue)
-		DrawImage(iter.image, iter.position);
+	for (auto && iter : renderPool)
+		DrawImage(*(iter.position), iter.image, iter.frame);
 
-	renderQueue.clear();
+	renderPool.clear();
 }
-// END FREEHILL draw order sort test
+
 #endif /* EVIL_RENDERER_H */

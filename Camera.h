@@ -18,8 +18,13 @@ public:
 	int					Width() const;
 	int					Height() const;
 
+	float				GetZoom() const;
 	void				SetZoom(const float level);
 	const eVec2 &		GetAbsBounds(bool minMax = false) const;
+
+	static constexpr const float zoomIncrement = 0.1f;
+	static constexpr const float maxZoom = 2.0f;
+	static constexpr const float minZoom = 0.1f;
 
 private:
 
@@ -76,6 +81,13 @@ inline int eCamera::Width() const {
 //***************
 inline int eCamera::Height() const {
 	return (int)localBounds.Height();
+}
+
+//***************
+// eCamera::GetZoom
+//***************
+inline float eCamera::GetZoom() const {
+	return zoomLevel;
 }
 
 //***************

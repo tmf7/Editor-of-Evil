@@ -3,22 +3,22 @@
 
 //***************
 // eRenderer::Init
-// initialize the window, its backbuffer surface, and a default font
+// initialize the window, its rendering context, and a default font
 //***************
 bool eRenderer::Init() {
-	
 	window = SDL_CreateWindow("Evil", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 800, 600, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
 
 	if (!window)
 		return false;
 
-	internal_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+	// DEBUG: TARGETTEXTURE is used to read pixel data from SDL_Textures
+	internal_renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE);
 
 	if (!internal_renderer)
 		return false;
 
 	// enable linear anti-aliasing for the renderer context
-	int success = SDL_SetHintWithPriority(SDL_HINT_RENDER_SCALE_QUALITY, "linear" , SDL_HINT_OVERRIDE);
+	SDL_SetHintWithPriority(SDL_HINT_RENDER_SCALE_QUALITY, "linear" , SDL_HINT_OVERRIDE);
 
 	if (SDL_SetRenderDrawColor(internal_renderer, 128, 128, 128, 255) == -1)		// opaque grey
 		return false;
@@ -39,8 +39,7 @@ bool eRenderer::Init() {
 // close the font and destroy the window
 //***************
 void eRenderer::Free() const {
-
-	if (!font)
+	if (font)
 		TTF_CloseFont(font);
 
 	TTF_Quit();
@@ -55,31 +54,44 @@ void eRenderer::Free() const {
 //***************
 // eRenderer::DrawOutlineText
 // Draws the given string on the screen using location and color
+// if isStatic is true then the text is considered unchanging and the
+// text's image gets cached for later use
 // DEBUG: converts the input point float data to integer values
+// TODO: potentially scale, rotate, and translate the text for things other than HUD/Toolbox text
 //***************
-void eRenderer::DrawOutlineText(char * string, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a) const {
-	SDL_Surface * surfaceText = TTF_RenderText_Solid(font, string, SDL_Color{ r,g,b, a });
-	if (surfaceText == NULL)
-		return;
+void eRenderer::DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool isStatic) const {
+	SDL_Texture * renderedText = NULL;
+	if (isStatic) {
+		std::shared_ptr<eImage> result;
+		// check if the image already exists, if not then load it and set result
+		editor.GetImageManager().LoadConstantText(font, text, r, g, b, a, result);
+		renderedText = result->Source();
+	} else {
+		SDL_Surface * surfaceText = TTF_RenderText_Solid(font, text, SDL_Color{ r, g, b, a });
+		if (surfaceText == NULL)
+			return;
 
-	SDL_Texture * renderedText = SDL_CreateTextureFromSurface(internal_renderer, surfaceText);
-	if (renderedText == NULL)
-		return;
+		renderedText = SDL_CreateTextureFromSurface(internal_renderer, surfaceText);
+		SDL_FreeSurface(surfaceText);
+		if (renderedText == NULL)
+			return;
 
-	SDL_Rect destRect{ (int)point.x , (int)point.y };
+		SDL_SetTextureBlendMode(renderedText, SDL_BLENDMODE_BLEND);
+	}
+
+	SDL_Rect destRect { (int)point.x , (int)point.y };
+	SDL_QueryTexture(renderedText, NULL, NULL, &destRect.w, &destRect.h);
 	SDL_RenderCopy(internal_renderer, renderedText, NULL, &destRect);
-	SDL_FreeSurface(surfaceText);
 }
 
 //***************
 // eRenderer::DrawDebugRect
+// TODO: scale the screenRect according to camera zoom as well
 //***************
 void eRenderer::DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill) const {
 	Uint8 oldColor[4];
 	SDL_GetRenderDrawColor(internal_renderer, &oldColor[0], &oldColor[1], &oldColor[2], &oldColor[3]);
 	SDL_SetRenderDrawColor(internal_renderer, RGBAcolor[0], RGBAcolor[1], RGBAcolor[2], RGBAcolor[3]);
-
-	// TODO: scale the screenRect according to camera zoom as well
 
 	SDL_Rect screenRect{ eMath::NearestInt(rect.x - editor.GetCamera().Origin().x),
 						 eMath::NearestInt(rect.y - editor.GetCamera().Origin().y),
@@ -92,16 +104,16 @@ void eRenderer::DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fil
 
 //***************
 // eRenderer::DrawDebugRects
+// TODO: scale the screenRect according to camera zoom as well
 //***************
 void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill) const {
 	Uint8 oldColor[4];
 	SDL_GetRenderDrawColor(internal_renderer, &oldColor[0], &oldColor[1], &oldColor[2], &oldColor[3]);
 	SDL_SetRenderDrawColor(internal_renderer, RGBAcolor[0], RGBAcolor[1], RGBAcolor[2], RGBAcolor[3]);
 
-	// TODO: scale the screenRect according to camera zoom as well
-
 	int(*drawFunc)(SDL_Renderer *, const SDL_Rect *);
 	drawFunc = fill ? SDL_RenderFillRect : SDL_RenderDrawRect;
+
 	for (auto && iter : rects) {
 		SDL_Rect screenRect{ eMath::NearestInt(iter.x - editor.GetCamera().Origin().x),
 							 eMath::NearestInt(iter.y - editor.GetCamera().Origin().y),
@@ -115,22 +127,23 @@ void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & 
 
 //***************
 // eRenderer::DrawImage
-// draws a source image's current frame to the screen
+// if frame is nullptr the entire image is drawn
+// otherwise frame sets a sub-section of the image to draw
 // DEBUG: converts the input point float data to integer values
 //***************
-void eRenderer::DrawImage(eImage * image, const eVec2 & point) const {
-	SDL_Rect destRect;
-
-	if (image == NULL || image->Source() == NULL)
+void eRenderer::DrawImage(const eVec2 & point, std::shared_ptr<eImage> image, const SDL_Rect * frame) const {
+	if (image == nullptr || !image->IsValid())
 		return;
-
+	
 	// adjust the position and zoom of the target according to camera properties
+	// TODO: migrate this to EngineOfEvil and also incorperate isometric calculation (maybe)
+	SDL_Rect destRect;
 	destRect.x = eMath::NearestInt(point.x - editor.GetCamera().Origin().x);
 	destRect.y = eMath::NearestInt(point.y - editor.GetCamera().Origin().y);
 	destRect.w = editor.GetCamera().Width();
 	destRect.h = editor.GetCamera().Height();
 
-	SDL_RenderCopy(internal_renderer, image->Source(), &image->Frame(), &destRect);
+	SDL_RenderCopy(internal_renderer, image->Source(), frame, &destRect);
 }
 /*
 //***************
