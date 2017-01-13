@@ -18,10 +18,26 @@ bool eRenderer::Init() {
 		return false;
 
 	// enable linear anti-aliasing for the renderer context
-	SDL_SetHintWithPriority(SDL_HINT_RENDER_SCALE_QUALITY, "linear" , SDL_HINT_OVERRIDE);
+//	SDL_SetHintWithPriority(SDL_HINT_RENDER_SCALE_QUALITY, "linear" , SDL_HINT_OVERRIDE);
 
 	if (SDL_SetRenderDrawColor(internal_renderer, 128, 128, 128, 255) == -1)		// opaque grey
 		return false;
+
+	// initialize scalableTarget for scaling textures using the camera
+	// independent of any static overlay (gui/HUD)
+	SDL_Rect viewArea;
+	SDL_RenderGetViewport(internal_renderer, &viewArea);
+	scalableTarget = SDL_CreateTexture(internal_renderer,
+									   SDL_PIXELFORMAT_ARGB8888,		// DEBUG: this format may not work for all images
+									   SDL_TEXTUREACCESS_TARGET,
+									   viewArea.w,
+									   viewArea.h);
+
+	if (!scalableTarget)
+		return false;
+
+	// ensure the scalableTarget can alhpa-blend
+	SDL_SetTextureBlendMode(scalableTarget, SDL_BLENDMODE_BLEND);
 
 	if (TTF_Init() == -1)
 		return false;
@@ -58,10 +74,11 @@ void eRenderer::Free() const {
 // text's image gets cached for later use
 // DEBUG: converts the input point float data to integer values
 // TODO: potentially scale, rotate, and translate the text for things other than HUD/Toolbox text
+// TODO: does not currently accomodate camera translation
 //***************
-void eRenderer::DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool isStatic) const {
+void eRenderer::DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool constText, bool dynamic) const {
 	SDL_Texture * renderedText = NULL;
-	if (isStatic) {
+	if (constText) {
 		std::shared_ptr<eImage> result;
 		// check if the image already exists, if not then load it and set result
 		editor.GetImageManager().LoadConstantText(font, text, r, g, b, a, result);
@@ -81,14 +98,18 @@ void eRenderer::DrawOutlineText(const char * text, const eVec2 & point, Uint8 r,
 
 	SDL_Rect destRect { (int)point.x , (int)point.y };
 	SDL_QueryTexture(renderedText, NULL, NULL, &destRect.w, &destRect.h);
+	SDL_SetRenderTarget(internal_renderer, dynamic ? scalableTarget : NULL);
 	SDL_RenderCopy(internal_renderer, renderedText, NULL, &destRect);
+	SDL_SetRenderTarget(internal_renderer, NULL);
 }
 
 //***************
 // eRenderer::DrawDebugRect
-// TODO: scale the screenRect according to camera zoom as well
+// dynamic == true draws to the scalableTarget
+// dynamic == false draws to the default render target
+// DEBUG: immediatly draws to the given render target
 //***************
-void eRenderer::DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill) const {
+void eRenderer::DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill, bool dynamic) const {
 	Uint8 oldColor[4];
 	SDL_GetRenderDrawColor(internal_renderer, &oldColor[0], &oldColor[1], &oldColor[2], &oldColor[3]);
 	SDL_SetRenderDrawColor(internal_renderer, RGBAcolor[0], RGBAcolor[1], RGBAcolor[2], RGBAcolor[3]);
@@ -97,16 +118,20 @@ void eRenderer::DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fil
 						 eMath::NearestInt(rect.y - editor.GetCamera().Origin().y),
 						 rect.w, 
 						 rect.h };
+	SDL_SetRenderTarget(internal_renderer, dynamic ? scalableTarget : NULL);
 	fill ? SDL_RenderFillRect(internal_renderer, &screenRect) 
 		 : SDL_RenderDrawRect(internal_renderer, &screenRect);
+	SDL_SetRenderTarget(internal_renderer, NULL);
 	SDL_SetRenderDrawColor(internal_renderer, oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
 }
 
 //***************
 // eRenderer::DrawDebugRects
-// TODO: scale the screenRect according to camera zoom as well
+// dynamic == true draws to the scalableTarget
+// dynamic == false draws to the default render target
+// DEBUG: immediatly draws to the given render target
 //***************
-void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill) const {
+void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill, bool dynamic) const {
 	Uint8 oldColor[4];
 	SDL_GetRenderDrawColor(internal_renderer, &oldColor[0], &oldColor[1], &oldColor[2], &oldColor[3]);
 	SDL_SetRenderDrawColor(internal_renderer, RGBAcolor[0], RGBAcolor[1], RGBAcolor[2], RGBAcolor[3]);
@@ -114,6 +139,7 @@ void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & 
 	int(*drawFunc)(SDL_Renderer *, const SDL_Rect *);
 	drawFunc = fill ? SDL_RenderFillRect : SDL_RenderDrawRect;
 
+	SDL_SetRenderTarget(internal_renderer, dynamic ? scalableTarget : NULL);
 	for (auto && iter : rects) {
 		SDL_Rect screenRect{ eMath::NearestInt(iter.x - editor.GetCamera().Origin().x),
 							 eMath::NearestInt(iter.y - editor.GetCamera().Origin().y),
@@ -121,7 +147,7 @@ void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & 
 							 iter.h };
 		drawFunc(internal_renderer, &screenRect);
 	}
-
+	SDL_SetRenderTarget(internal_renderer, NULL);
 	SDL_SetRenderDrawColor(internal_renderer, oldColor[0], oldColor[1], oldColor[2], oldColor[3]);
 }
 
@@ -131,20 +157,96 @@ void eRenderer::DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & 
 // otherwise frame sets a sub-section of the image to draw
 // DEBUG: converts the input point float data to integer values
 //***************
-void eRenderer::DrawImage(const eVec2 & point, std::shared_ptr<eImage> image, const SDL_Rect * frame) const {
-	if (image == nullptr || !image->IsValid())
-		return;
-	
-	// adjust the position and zoom of the target according to camera properties
-	// TODO: migrate this to EngineOfEvil and also incorperate isometric calculation (maybe)
-	SDL_Rect destRect;
-	destRect.x = eMath::NearestInt(point.x - editor.GetCamera().Origin().x);
-	destRect.y = eMath::NearestInt(point.y - editor.GetCamera().Origin().y);
-	destRect.w = editor.GetCamera().Width();
-	destRect.h = editor.GetCamera().Height();
-
-	SDL_RenderCopy(internal_renderer, image->Source(), frame, &destRect);
+void eRenderer::DrawImage(std::shared_ptr<eImage> image, const SDL_Rect * srcRect, const SDL_Rect * dstRect) const {
+	SDL_RenderCopy(internal_renderer, image->Source(), srcRect, dstRect);
 }
+
+//***************
+// eRenderer::OnScreen
+//***************
+bool eRenderer::OnScreen(const eVec2 & point) const {
+	SDL_Rect viewArea;
+	SDL_RenderGetViewport(internal_renderer, &viewArea);
+	eBounds screenBounds = eBounds(eVec2((float)viewArea.x, (float)viewArea.y), 
+									eVec2((float)(viewArea.x + viewArea.w), (float)(viewArea.y + viewArea.h)));
+	return screenBounds.ContainsPoint(point);
+}
+
+//***************
+// eRenderer::OnScreen
+//***************
+bool eRenderer::OnScreen(const eBounds & bounds) const {
+	SDL_Rect viewArea;
+	SDL_RenderGetViewport(internal_renderer, &viewArea);
+	eBounds screenBounds = eBounds(eVec2((float)viewArea.x, (float)viewArea.y),
+								   eVec2((float)(viewArea.x + viewArea.w), (float)(viewArea.y + viewArea.h)));
+	return screenBounds.Overlaps(bounds);
+}
+
+//***************
+// eRenderer::AddToRenderPool
+// dynamic == false is used for overlays and/or HUD guis
+// dynamic == true is used for scaling and translating groups of images together based on camera properties
+// DEBUG: most-significant 2 bytes of priority were set using the layer during construction,
+// the the least-significant 2 bytes are now set according to the order the renderImage was added to the renderPool
+//***************
+void eRenderer::AddToRenderPool(renderImage_t & renderImage, bool dynamic) {
+	std::vector<renderImage_t> * targetPool = dynamic ? &dynamicPool : &staticPool;
+	renderImage.priority |= targetPool->size();
+	targetPool->push_back(renderImage);
+	int stopper = 0;
+}
+
+//***************
+// eRenderer::Flush
+// FIXME/BUG(!): ensure entities never occupy the same layer/depth as world tiles 
+// (otherwise the unstable quicksort will put them at RANDOM draw orders relative to the same layer/depth tiles)
+//***************
+void eRenderer::Flush() {
+	// draw the dynamicPool on the scalableTarget
+	QuickSort(dynamicPool.data(), 
+			  dynamicPool.size(), 
+			  [](auto && a, auto && b) { 
+					if (a.priority < b.priority) return -1; 
+					else if (a.priority > b.priority) return 1;
+					return 0; 
+				}
+	);
+	int success = SDL_SetRenderTarget(internal_renderer, scalableTarget);
+	for (auto && iter : dynamicPool)
+		DrawImage(iter.image, iter.srcRect, &iter.dstRect);
+
+	dynamicPool.clear();
+
+	// scale-transfer the scalableTarget onto the default render target, which
+	// adjusts the zoom of the scalableTarget according to camera properties
+	// FIXME/BUG: this dstRect might snap everything to 0,0 (test by drawing multiple targets at different origins
+	// FIXME/BUG: this dstRect also translates everything opposite to the intent (good/bad???)
+	// FIXME/BUG: the camera/original screen currently cuts off the full size of the test target image, 
+	// when it should blit the entire image to the target depending on its movement
+	success = SDL_SetRenderTarget(internal_renderer, NULL);
+	SDL_Rect dstRect;
+	dstRect.x = -editor.GetCamera().Origin().x;
+	dstRect.y = -editor.GetCamera().Origin().y;
+	dstRect.w = editor.GetCamera().Width();
+	dstRect.h = editor.GetCamera().Height();
+	SDL_RenderCopy(internal_renderer, scalableTarget, NULL, &dstRect);
+
+	// draw the staticPool
+	QuickSort(staticPool.data(),
+			  staticPool.size(), 
+			  [](auto && a, auto && b) { 
+					if (a.priority < b.priority) return -1; 
+					else if (a.priority > b.priority) return 1;
+					return 0; 
+				}
+	);
+	for (auto && iter : staticPool)
+		DrawImage(iter.image, iter.srcRect, &iter.dstRect);
+
+	staticPool.clear();
+}
+
 /*
 //***************
 // eRenderer::DrawPixel

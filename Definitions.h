@@ -20,7 +20,7 @@
 #define MAX_IMAGES 1024
 #define MAX_ROWS 128
 #define MAX_COLUMNS 128
-#define MAX_LAYER 0xff
+#define MAX_LAYER 128
 
 extern Uint32 globalIDPool;	// globally unique identifier: each resource gets, regardless of copying, moving, or type
 

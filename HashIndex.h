@@ -45,7 +45,7 @@ private:
 	std::vector<int>	indexChain;
 	int					hashMask;
 
-	static const int	defaultHashSize = 1024;
+	static const int	defaultHashSize = 1;
 	static const int	INVALID_INDEX = -1;
 };
 

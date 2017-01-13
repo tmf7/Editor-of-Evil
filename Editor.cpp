@@ -19,7 +19,7 @@ bool eEditor::Init() {
 		return false;
 	}
 
-	if (!imageManager.Init() || !imageManager.BatchLoad("def/map1.imb")) {
+	if (!imageManager.Init() || !imageManager.BatchLoad("batches/map1.imb")) {
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Image Manager failed to initialize!", NULL);
 		return false;
 	}
@@ -29,19 +29,31 @@ bool eEditor::Init() {
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Target failed to initialize!", NULL);
 		return false;
 	}
-//	SliceTarget();
+
+	// DEBUG: hard-coded button tiler for testing
+	std::shared_ptr<eImageTiler> result = nullptr;
+	if (!imageTilerManager.LoadTiler("graphics/gui/buttons/evil_three_state_button.tls", result)) {
+		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Tiler failed to initialize!", NULL);
+		return false;
+	}
+
+	// ****************START HERE****************
+	testButton.Init(SDL_Rect{50, renderer.ViewArea().h - 50, 150, 40}, result);	// FIXME: (HACK) set a static screen location at HALF-SIZE of original button frame (local scaling, as opposed to RENDERTYPE_DYNAMIC scaling)
+	testButton.SetStateEnum(2);							// FIXME: (HACK) amounts to the frame index for now
+
+//	SliceTarget();		// FIXME: old hack for auto slicing (broken function)
 
 	camera.Init();		// DEUBG: this must come after target initialization
-
 	input.Init();		// DEBUG: will crash if it fails around the allocation
 	return true;
 }
 
 //*****************
 // eEditor::Shutdown
+// TODO: incorperate IMG_Init(...) and TTF_Init(...)
+// and IMG_Quit(); and TTF_Quit();
 //*****************
 void eEditor::Shutdown() {
-	imageManager.Free();
 	renderer.Free();
 	SDL_Quit();
 }
@@ -68,20 +80,26 @@ bool eEditor::RunFrame() {
 	camera.Think();
 
 	renderer.Clear();
-	// TODO: allow a linear expansion/contraction zoom without affecting the source texture
-	// or, if it does then scale how the rectangles are computed as well
-	renderer.AddToRenderPool(renderImage_t(vec2_zero, target, nullptr, 0));
-	renderer.FlushRenderPool();
+	
+	// DEBUG: hack for editing target draw
+	SDL_Rect dstRect{ 0, 0, target->GetWidth() , target->GetHeight() };
+	renderer.AddToRenderPool(renderImage_t{target, nullptr, dstRect, 0}, RENDERTYPE_DYNAMIC);
 
+	// DEGUG: test draw the button normally
+	testButton.Draw();
+	renderer.Flush();
+
+	// DEBUG: hack for drawing slices
 	Uint8 debugColor[] = { 0, 128, 0, 255 };	// opaque green
-	renderer.DrawDebugRect(debugColor, SDL_Rect{ 0,0,4,4 }, true);
-//	renderer.DrawDebugRects(debugColor, outputRects, false);
+	renderer.DrawDebugRect(debugColor, SDL_Rect{ 0,0,4,4 }, true, RENDERTYPE_STATIC);
+//	for (int index = 0; index < targetTiler->GetNumFrames(); index++)
+//		renderer.DrawDebugRect(debugColor, targetTiler->GetFrame(index), RENDERTYPE_STATIC);
 
 	renderer.Show();
 
 	Uint32 frameDuration = SDL_GetTicks() - start;	// DEBUG: always positive unless game runs for ~49 days
-	int delay = (1000 / fps) - frameDuration;
-	SDL_Delay(delay > 0 ? delay : 0);		// FIXME: SDL_Delay isn't the most reliable frame delay method
+	int delay = (1000 / fps) - frameDuration;		// DEBUG: potentially negative
+	SDL_Delay(delay > 0 ? delay : 0);				// FIXME: SDL_Delay isn't the most reliable frame delay method
 
 	return programRunning;
 }

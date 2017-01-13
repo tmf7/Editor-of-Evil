@@ -1,8 +1,7 @@
 #ifndef EVIL_BUTTON_H
 #define EVIL_BUTTON_H
 
-#include "Editor.h"
-//#include "Image.h"
+#include "ImageTiler.h"
 
 //******************************
 //		eButton
@@ -16,30 +15,25 @@
 class eButton {
 public:
 
-	bool				Init(const SDL_Rect & screenRegion, const char * buttonDefFile);
+	void				Init(const SDL_Rect & screenRegion, const std::shared_ptr<eImageTiler> & tiler);
 	bool				IsTriggered() const;
 	bool				IsPressed() const;
 	bool				IsMouseOver() const;
 	void				Think();
 	void				Draw();
+	void				SetStateEnum(const Uint8 state);
+	Uint8				GetStateEnum() const;
 
 private:
 
-	eImageTiler			statesImage;		// contains a pointer to the image of various button states
-	eBounds				clickRegion;
-	char				state;
+	std::shared_ptr<eImageTiler>	states;	// overall image with sub-frame access
+
+	SDL_Rect			clickRegion;
+	Uint8				state;
 	bool				mouseOver;
 	bool				pressed;
 	bool				triggered;
-
 };
-
-//*************
-// eButton::Draw
-//**************
-inline void eButton::Draw() {
-	editor.GetRenderer().AddToRenderPool( renderImage_t{ clickRegion[0], statesImage.Source(), &statesImage.GetFrame(), MAX_LAYER } );
-}
 
 //*************
 // eButton::IsPressed
@@ -60,6 +54,20 @@ inline bool eButton::IsTriggered() const {
 //**************
 inline bool eButton::IsMouseOver() const {
 	return mouseOver;
+}
+
+//*************
+// eButton::SetStateEnum
+//**************
+inline void eButton::SetStateEnum(const Uint8 state) {
+	this->state = state;
+}
+
+//*************
+// eButton::GetStateEnum
+//**************
+inline Uint8 eButton::GetStateEnum() const {
+	return state;
 }
 
 #endif /* EVIL_BUTTON_H */

@@ -19,7 +19,7 @@ public:
 	int					Height() const;
 
 	float				GetZoom() const;
-	void				SetZoom(const float level);
+	void				SetZoom(float level);
 	const eVec2 &		GetAbsBounds(bool minMax = false) const;
 
 	static constexpr const float zoomIncrement = 0.1f;
@@ -41,7 +41,8 @@ private:
 // eCamera::eCamera
 //***************
 inline eCamera::eCamera() 
-	: speed(10.0f), zoomLevel(1) {
+	: speed(10.0f), 
+	  zoomLevel(1) {
 }
 
 //*************

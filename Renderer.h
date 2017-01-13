@@ -9,22 +9,26 @@
 #include "Sort.h"
 #include "Image.h"
 
+typedef enum {
+	RENDERTYPE_STATIC,
+	RENDERTYPE_DYNAMIC
+} eRenderType;
+
 typedef struct renderImage_s {
-	eVec2 *						position;	// where on the screen
-	std::shared_ptr<eImage>		image;		// for entities, this would be which frame of the eSprite is being drawn
-	SDL_Rect *					frame;		// what part of the source image to draw
+	std::shared_ptr<eImage>		image;			// for entities, this would be which frame of the eSprite is being drawn
+	const SDL_Rect *			srcRect;		// what part of the source image to draw (nullptr for all of it)
+	SDL_Rect					dstRect;		// where on the screen and what size
 	Uint32						priority;
 
 	renderImage_s()
-		: position(nullptr), 
-		  image(nullptr),
-		  frame(nullptr),
+		: image(nullptr),
+		  srcRect(nullptr),
 		  priority(MAX_LAYER << 16) {};
 	
-	renderImage_s(eVec2 & position, std::shared_ptr<eImage> image, SDL_Rect * frame, const Uint8 layer)
-		: position(&position), 
-		  image(image), 
-		  frame(frame),
+	renderImage_s(std::shared_ptr<eImage> image, const SDL_Rect * srcRect, const SDL_Rect & dstRect, const Uint8 layer)
+		: image(image),
+		  srcRect(srcRect), 
+		  dstRect(dstRect),
 		  priority(layer << 16) {};	// DEBUG: most-significant 2 bytes are layer
 									// least-significant 2 bytes are renderPool push order
 } renderImage_t;
@@ -48,13 +52,13 @@ public:
 	SDL_Renderer *		GetSDLRenderer() const;
 	SDL_Window *		GetWindow() const;
 
-	void				AddToRenderPool(renderImage_t & renderImage);
-	void				FlushRenderPool();
+	void				AddToRenderPool(renderImage_t & renderImage, bool dynamic);
+	void				Flush();
 
-	void				DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool isStatic) const;
-	void				DrawImage(const eVec2 & point, std::shared_ptr<eImage> image, const SDL_Rect * frame) const;
-	void				DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill) const;
-	void				DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill) const;
+	void				DrawOutlineText(const char * text, const eVec2 & point, Uint8 r, Uint8 g, Uint8 b, Uint8 a, bool constText, bool dynamic) const;
+	void				DrawImage(std::shared_ptr<eImage> image, const SDL_Rect * srcRect, const SDL_Rect * destRect) const;
+	void				DrawDebugRect(Uint8 * RGBAcolor, const SDL_Rect & rect, bool fill, bool dynamic) const;
+	void				DrawDebugRects(Uint8 * RGBAcolor, const std::vector<SDL_Rect> & rects, bool fill, bool dynamic) const;
 
 //	bool				FormatSurface(SDL_Surface ** surface, int * colorKey) const;	// DEBUG: deprecated
 //	void				DrawPixel(const eVec2 & point, Uint8 r, Uint8 g, Uint8 b) const;	// DEBUG: deprecated
@@ -64,11 +68,13 @@ public:
 
 private:
 
-	static const int				defaultRenderCapacity = 1024;
-	std::vector<renderImage_t>		renderPool;
+	static const int				defaultRenderCapacity = 1024;// maximum separate items to indirectly draw from the pool
+	std::vector<renderImage_t>		staticPool;					
+	std::vector<renderImage_t>		dynamicPool;				
 
 	SDL_Window *		window;
 	SDL_Renderer *		internal_renderer;
+	SDL_Texture *		scalableTarget;
 	TTF_Font *			font;
 };
 
@@ -76,7 +82,8 @@ private:
 // eRenderer::eRenderer
 //***************
 inline eRenderer::eRenderer() {
-	renderPool.reserve(defaultRenderCapacity);
+	staticPool.reserve(defaultRenderCapacity);
+	dynamicPool.reserve(defaultRenderCapacity);
 }
 
 //***************
@@ -115,58 +122,6 @@ inline SDL_Renderer * eRenderer::GetSDLRenderer() const {
 //*****************
 inline SDL_Window * eRenderer::GetWindow() const {
 	return window;
-}
-
-//***************
-// eRenderer::OnScreen
-//***************
-inline bool eRenderer::OnScreen(const eVec2 & point) const {
-	SDL_Rect viewArea;
-	SDL_RenderGetViewport(internal_renderer, &viewArea);
-	eBounds screenBounds = eBounds(eVec2((float)viewArea.x, (float)viewArea.y), 
-									eVec2((float)(viewArea.x + viewArea.w), (float)(viewArea.y + viewArea.h)));
-	return screenBounds.ContainsPoint(point);
-}
-
-//***************
-// eRenderer::OnScreen
-//***************
-inline bool eRenderer::OnScreen(const eBounds & bounds) const {
-	SDL_Rect viewArea;
-	SDL_RenderGetViewport(internal_renderer, &viewArea);
-	eBounds screenBounds = eBounds(eVec2((float)viewArea.x, (float)viewArea.y),
-								   eVec2((float)(viewArea.x + viewArea.w), (float)(viewArea.y + viewArea.h)));
-	return screenBounds.Overlaps(bounds);
-}
-
-//***************
-// eRenderer::AddToRenderQueue
-// DEBUG: most-significant 2 bytes of priority were set using the layer during construction,
-// the the least-significant 2 bytes are now set according to the order the renderImage was added to the renderPool
-//***************
-inline void eRenderer::AddToRenderPool(renderImage_t & renderImage) {
-	renderImage.priority |= renderPool.size();
-	renderPool.push_back(renderImage);
-}
-
-//***************
-// eRenderer::FlushRenderQueue
-// FIXME/BUG(!): ensure entities never occupy the same layer/depth as world tiles 
-// (otherwise the unstable quicksort will put them at RANDOM draw orders relative to the same layer/depth tiles)
-//***************
-inline void eRenderer::FlushRenderPool() {
-	QuickSort(renderPool.data(), 
-			  renderPool.size(), 
-			  [](auto && a, auto && b) { 
-					if (a.priority < b.priority) return -1; 
-					else if (a.priority > b.priority) return 1;
-					return 0; 
-				}
-	);
-	for (auto && iter : renderPool)
-		DrawImage(*(iter.position), iter.image, iter.frame);
-
-	renderPool.clear();
 }
 
 #endif /* EVIL_RENDERER_H */

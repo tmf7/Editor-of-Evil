@@ -22,11 +22,9 @@ void eCamera::Think() {
 
 	input = &editor.GetInput();
 	if (input->KeyPressed(SDL_SCANCODE_EQUALS))
-		zoomLevel += zoomIncrement;
+		SetZoom(zoomLevel + zoomIncrement);
 	else if (input->KeyPressed(SDL_SCANCODE_MINUS))
-		zoomLevel -= zoomIncrement;
-
-	SetZoom(zoomLevel);
+		SetZoom(zoomLevel - zoomIncrement);
 
 	if (input->KeyHeld(SDL_SCANCODE_SPACE)) {
 		SetOrigin(vec2_zero);
@@ -40,17 +38,19 @@ void eCamera::Think() {
 
 //***************
 // eCamera::SetZoom
-// FIXME: currently utilizes debug target image to center the camera
 //***************
-void eCamera::SetZoom(const float level) {
-	if (zoomLevel < minZoom)
-		zoomLevel = minZoom;
-	else if (zoomLevel > maxZoom)
-		zoomLevel = maxZoom;
+void eCamera::SetZoom(float level) {
+	if (level < minZoom)
+		level = minZoom;
+	else if (level > maxZoom)
+		level = maxZoom;
 
 	zoomLevel = level;
-	eVec2 targetBottomRight = eVec2((float)target->GetWidth(), (float)target->GetHeight());	// FIXME: dont use target?
-	targetBottomRight *= level;
-	localBounds = eBounds(-targetBottomRight / 2.0f, targetBottomRight / 2.0f);	// variable rectangle with (0, 0) at its center)
+
+	eVec2 screenBottomRight = eVec2((float)editor.GetRenderer().ViewArea().w, (float)editor.GetRenderer().ViewArea().h);
+	screenBottomRight *= level;
+
+	// variable rectangle with (0, 0) at its center)
+	localBounds = eBounds(-screenBottomRight / 2.0f, screenBottomRight / 2.0f);	
 }
 

@@ -1,0 +1,5 @@
+graphics/gui/buttons/evil_three_state_button.png
+3 3
+press	{0 55 300 85}
+release	{0 256 300 85}
+hover	{0 455 300 85}

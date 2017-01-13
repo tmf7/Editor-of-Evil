@@ -18,24 +18,22 @@ public:
 	bool			BatchLoad(const char * imageBatchLoadFile);
 	bool			GetImage(const char * filename, std::shared_ptr<eImage> & result);
 	bool			GetImage(int imageID, std::shared_ptr<eImage> & result);
-	bool			LoadImage(const char * filename, std::shared_ptr<eImage> & result);
+	bool			LoadImage(const char * filename, int accessType, std::shared_ptr<eImage> & result);
 	bool			LoadConstantText(TTF_Font * font, const char * text, Uint8 r, Uint8 g, Uint8 b, Uint8 a, std::shared_ptr<eImage> & result);
 	int				GetNumImages() const;
-	void			Free();
+	void			Clear();
 
 private:
 
-	std::vector<std::shared_ptr<eImage>>		images;	// list of pointers to dynamically allocated image resources
-
-	eHashIndex		imageFilenameHash;
-	int				numImages;
+	std::vector<std::shared_ptr<eImage>>		imageList;			// dynamically allocated image resources
+	eHashIndex									imageFilenameHash;	// quick access to imageList
 };
 
 //***************
 // eImageManager::GetNumImages
 //***************
 inline int eImageManager::GetNumImages() const {
-	return numImages;
+	return imageList.size();
 }
 
 #endif /* EVIL_TEXTURE_MANAGER_H */
