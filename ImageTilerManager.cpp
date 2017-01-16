@@ -87,7 +87,7 @@ bool eImageTilerManager::LoadTiler(const char * filename, std::shared_ptr<eImage
 				if (!VerifyRead(read))
 					return false;
 			}
-			nextFrame = frameList.size() + 1 < frameList.capacity() 
+			nextFrame = (read.peek() != '}' && frameList.size() + 1 < frameList.capacity())
 						? frameList.data() + frameList.size() + 1
 						: firstFrame;
 			frameList.push_back(eImageFrame(frame, nextFrame));
@@ -98,7 +98,7 @@ bool eImageTilerManager::LoadTiler(const char * filename, std::shared_ptr<eImage
 
 	// register the requested imageTiler
 	tilerFilenameHash.Add(hasher(filename), tilerList.size());
-	result = std::make_shared<eImageTiler>(source, std::move(frameList), std::move(sequenceHash), tilerList.size());
+	result = std::make_shared<eImageTiler>(source, std::move(frameList), std::move(sequenceHash), filename, tilerList.size());
 	tilerList.push_back(result);
 	globalIDPool++;
 	return true;

@@ -194,7 +194,6 @@ void eRenderer::AddToRenderPool(renderImage_t & renderImage, bool dynamic) {
 	std::vector<renderImage_t> * targetPool = dynamic ? &dynamicPool : &staticPool;
 	renderImage.priority |= targetPool->size();
 	targetPool->push_back(renderImage);
-	int stopper = 0;
 }
 
 //***************
@@ -203,7 +202,7 @@ void eRenderer::AddToRenderPool(renderImage_t & renderImage, bool dynamic) {
 // (otherwise the unstable quicksort will put them at RANDOM draw orders relative to the same layer/depth tiles)
 //***************
 void eRenderer::Flush() {
-	// draw the dynamicPool on the scalableTarget
+	// sort the dynamicPool for the scalableTarget
 	QuickSort(dynamicPool.data(), 
 			  dynamicPool.size(), 
 			  [](auto && a, auto && b) { 
@@ -212,27 +211,25 @@ void eRenderer::Flush() {
 					return 0; 
 				}
 	);
-	int success = SDL_SetRenderTarget(internal_renderer, scalableTarget);
+
+	// set the render target, and scale according to camera zoom
+	SDL_SetRenderTarget(internal_renderer, scalableTarget);
+	SDL_RenderSetScale(internal_renderer, editor.GetCamera().GetZoom(), editor.GetCamera().GetZoom());
+	
+	// draw to the scalableTarget
 	for (auto && iter : dynamicPool)
 		DrawImage(iter.image, iter.srcRect, &iter.dstRect);
 
 	dynamicPool.clear();
 
-	// scale-transfer the scalableTarget onto the default render target, which
-	// adjusts the zoom of the scalableTarget according to camera properties
-	// FIXME/BUG: this dstRect might snap everything to 0,0 (test by drawing multiple targets at different origins
-	// FIXME/BUG: this dstRect also translates everything opposite to the intent (good/bad???)
-	// FIXME/BUG: the camera/original screen currently cuts off the full size of the test target image, 
-	// when it should blit the entire image to the target depending on its movement
-	success = SDL_SetRenderTarget(internal_renderer, NULL);
-	SDL_Rect dstRect;
-	dstRect.x = -editor.GetCamera().Origin().x;
-	dstRect.y = -editor.GetCamera().Origin().y;
-	dstRect.w = editor.GetCamera().Width();
-	dstRect.h = editor.GetCamera().Height();
-	SDL_RenderCopy(internal_renderer, scalableTarget, NULL, &dstRect);
+	// reset the render target to default, 
+	// reset the renderer scale,
+	// and transfer the scalableTarget
+	SDL_SetRenderTarget(internal_renderer, NULL);
+	SDL_RenderSetScale(internal_renderer, 1.0f, 1.0f);
+	SDL_RenderCopy(internal_renderer, scalableTarget, NULL, NULL);
 
-	// draw the staticPool
+	// sort the staticPool for the default render target
 	QuickSort(staticPool.data(),
 			  staticPool.size(), 
 			  [](auto && a, auto && b) { 

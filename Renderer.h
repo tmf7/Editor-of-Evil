@@ -90,6 +90,9 @@ inline eRenderer::eRenderer() {
 // eRenderer::Clear
 //***************
 inline void eRenderer::Clear() const {
+	SDL_SetRenderTarget(internal_renderer, scalableTarget);
+	SDL_RenderClear(internal_renderer);
+	SDL_SetRenderTarget(internal_renderer, NULL);
 	SDL_RenderClear(internal_renderer);
 }
 

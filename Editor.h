@@ -7,7 +7,7 @@
 #include "Renderer.h"
 #include "Input.h"
 #include "Camera.h"
-#include "Button.h"
+#include "ButtonTypes.h"
 //#include "Overlay.h"
 
 class eEditor {
@@ -25,7 +25,7 @@ public:
 	eCamera &				GetCamera();
 	eImageManager &			GetImageManager();
 	eImageTilerManager &	GetImageTilerManager();
-	eButton &				GetButton();	// TODO: give this const char * name parameter
+	eThreeStateButton &		GetButton();	// TODO: give this const char * name parameter
 
 private:
 
@@ -34,7 +34,7 @@ private:
 	eCamera					camera;
 	eImageManager			imageManager;
 	eImageTilerManager		imageTilerManager;
-	eButton					testButton;
+	eThreeStateButton		testButton;
 //	eOverlay				overlay;
 };
 
@@ -85,7 +85,7 @@ inline eImageTilerManager & eEditor::GetImageTilerManager() {
 //*****************
 // eEditor::GetButton
 //*****************
-inline eButton & eEditor::GetButton() {
+inline eThreeStateButton & eEditor::GetButton() {
 	return testButton;
 }
 

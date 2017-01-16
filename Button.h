@@ -19,6 +19,7 @@ public:
 	bool				IsTriggered() const;
 	bool				IsPressed() const;
 	bool				IsMouseOver() const;
+	void				ClearTrigger();
 	void				Think();
 	void				Draw();
 	void				SetStateEnum(const Uint8 state);
@@ -54,6 +55,13 @@ inline bool eButton::IsTriggered() const {
 //**************
 inline bool eButton::IsMouseOver() const {
 	return mouseOver;
+}
+
+//*************
+// eButton::ClearTrigger
+//**************
+inline void eButton::ClearTrigger() {
+	triggered = false;
 }
 
 //*************

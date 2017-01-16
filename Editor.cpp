@@ -24,22 +24,23 @@ bool eEditor::Init() {
 		return false;
 	}
 
-	// DEBUG: hard-coded target image for testing
+	// TODO/FIXME: hard-coded target image for testing
 	if (!imageManager.GetImage("graphics/characters/heroine/jog/Jog_0(14,60,111).png", target)) {
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Target failed to initialize!", NULL);
 		return false;
 	}
 
-	// DEBUG: hard-coded button tiler for testing
+	// TODO/FIXME: hard-coded button tiler for testing
 	std::shared_ptr<eImageTiler> result = nullptr;
 	if (!imageTilerManager.LoadTiler("graphics/gui/buttons/evil_three_state_button.tls", result)) {
 		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Editor of Evil", "Tiler failed to initialize!", NULL);
 		return false;
 	}
 
-	// ****************START HERE****************
-	testButton.Init(SDL_Rect{50, renderer.ViewArea().h - 50, 150, 40}, result);	// FIXME: (HACK) set a static screen location at HALF-SIZE of original button frame (local scaling, as opposed to RENDERTYPE_DYNAMIC scaling)
-	testButton.SetStateEnum(2);							// FIXME: (HACK) amounts to the frame index for now
+	// set a static screen location at HALF-SIZE of original 
+	// button frame (local scaling, as opposed to RENDERTYPE_DYNAMIC scaling)
+	// TODO: change this to a batch initialization for an eOverlay
+	testButton.Init(SDL_Rect{50, renderer.ViewArea().h - 50, 150, 40}, result);
 
 //	SliceTarget();		// FIXME: old hack for auto slicing (broken function)
 
@@ -78,11 +79,12 @@ bool eEditor::RunFrame() {
 
 	input.Update();
 	camera.Think();
+	testButton.Think();	// FIXME/TODO: have a buttonManager do a batch Think() on the eOverlay Think() call
 
 	renderer.Clear();
 	
 	// DEBUG: hack for editing target draw
-	SDL_Rect dstRect{ 0, 0, target->GetWidth() , target->GetHeight() };
+	SDL_Rect dstRect{ eMath::NearestInt(-camera.Origin().x), eMath::NearestInt(-camera.Origin().y), target->GetWidth() , target->GetHeight() };
 	renderer.AddToRenderPool(renderImage_t{target, nullptr, dstRect, 0}, RENDERTYPE_DYNAMIC);
 
 	// DEGUG: test draw the button normally

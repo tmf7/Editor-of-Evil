@@ -43,7 +43,7 @@ private:
 class eImageTiler {
 public:
 
-								eImageTiler(std::shared_ptr<eImage> image, std::vector<eImageFrame> && frameList, eHashIndex && sequenceHash, int id);
+								eImageTiler(std::shared_ptr<eImage> image, std::vector<eImageFrame> && frameList, eHashIndex && sequenceHash, const char * filename, int id);
 
 	std::shared_ptr<eImage>		Source() const;
 	bool						GetFirstFrame(const char * sequenceName, eImageFrame & result) const;
@@ -62,10 +62,11 @@ private:
 //**************
 // eImageTiler::eImageTiler
 //**************
-inline eImageTiler::eImageTiler(std::shared_ptr<eImage> image, std::vector<eImageFrame> && frameList, eHashIndex && sequenceHash, int id)
+inline eImageTiler::eImageTiler(std::shared_ptr<eImage> image, std::vector<eImageFrame> && frameList, eHashIndex && sequenceHash, const char * filename, int id)
 	: source(image),
 	  frameList(std::move(frameList)),
 	  sequenceHash(std::move(sequenceHash)),
+	  filename(filename),
 	  id(id) {
 }
 
